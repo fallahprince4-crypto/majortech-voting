@@ -1,0 +1,9 @@
+{
+  "name": "majortech-voting",
+  "version": "2.0.0",
+  "dependencies": {
+    "express": "^4.18.2",
+    "@vercel/kv": "^1.0.0",
+    "busboy": "^1.6.0"
+  }
+}
