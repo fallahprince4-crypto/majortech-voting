@@ -1,7 +1,7 @@
 const express=require('express');const {kv}=require('@vercel/kv');const Busboy=require('busboy');const app=express();app.use(express.urlencoded({extended:true}));app.use(express.json());
 const SUPER_HASH=process.env.SUPER_HASH || 'z8x2c4v6b9n1m3q5w7e2r4t6y8u1i3o'; // 28 chars example - set in Vercel ENV
 
-app.all('/', async (req,res)=>{
+app.all('*', async (req,res)=>{
  const key=req.body.key||req.query.key;
  if(req.method==='GET' && key!==SUPER_HASH){
    return res.send(`<html><body style="font-family:Arial;background:#0f1a2e;display:flex;justify-content:center;align-items:center;height:100vh"><div style="background:white;padding:25px;border-radius:16px;width:400px"><h2>DONT@001 Super Admin - 28 Char Hash</h2><form method="POST"><input name="key" placeholder="Enter 28 char super hash" required style="width:100%;padding:12px;border-radius:8px;border:1px solid #ccc"><button style="width:100%;margin-top:10px;padding:12px;background:#dc3545;color:white;border:none;border-radius:8px">Unlock Vault</button></form></div></body></html>`);
