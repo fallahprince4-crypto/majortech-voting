@@ -1,89 +1,56 @@
-const express=require('express'),fs=require('fs'),app=express();
-app.use(express.json({limit:'5mb'}));app.use(express.urlencoded({extended:true,limit:'5mb'}));
-const DATA='/tmp/majortech-final.json';
-const SUPER=process.env.SUPER_HASH||'super-admin-hash',FACULTY=process.env.FACULTY_HASH||'faculty-hash';
-function getData(){try{if(!fs.existsSync(DATA))return{votes:{},candidates:[],votedIds:[],validIds:["LISE-042-2025","LISE-043-2025","LISE-046/2025","LISE-001"],tokens:{},audit:[]};return JSON.parse(fs.readFileSync(DATA,'utf8'));}catch{return{votes:{},candidates:[],votedIds:[],validIds:["LISE-042-2025","LISE-043-2025","LISE-046/2025","LISE-001"],tokens:{},audit:[]}}}
-function save(d){fs.writeFileSync(DATA,JSON.stringify(d));}
-function genTok(){const c='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let t='TG';for(let i=0;i<4;i++)t+=c[Math.floor(Math.random()*c.length)];return t;}
+import express from 'express';
+import { kv } from '@vercel/kv';
+const app = express();
+app.use(express.json({limit:'10mb'}));
+app.use(express.urlencoded({extended:true, limit:'10mb'}));
 
-app.all('*',(req,res)=>{
- const u=new URL(req.url,'https://example.com'),path=u.pathname.toLowerCase(),h=u.searchParams.get('h')||'',tok=u.searchParams.get('token')||'',sid=u.searchParams.get('sid')||'',data=getData();
+const SUPER_HASH = process.env.SUPER_HASH || 'MajorTech2026_SuperSecure_32Chars!';
+const FACULTY_HASH = process.env.FACULTY_HASH || 'MajorTech2026_FacultySecure_32Chars!';
+const KEY = "majortech-permanent-v1";
 
- // ================= DONT@001 VAULT - WITH GREEN AUDIT + RESET =================
- if(path.includes('dont@001')||path.includes('dont001')){
-  if(path.includes('/data'))return res.json(data);
-  if(path.includes('/reset')){const keepIds=data.validIds,keepCands=data.candidates;save({votes:{},candidates:keepCands,votedIds:[],validIds:keepIds,tokens:{},audit:[new Date().toISOString()+' - RESET - Election reset by admin']});return res.json({ok:true});}
-  if(path.includes('/upload-ids')){data.validIds=req.body.ids||data.validIds;data.audit.push(new Date().toISOString()+' - IMPORT - '+data.validIds.length+' IDs imported');save(data);return res.json({ok:true});}
-  if(path.includes('/add-candidate')){data.candidates.push({id:'C'+Date.now(),party:req.body.party,president:req.body.president,vice:req.body.vice,presidentPhoto:req.body.presidentPhoto,vicePhoto:req.body.vicePhoto,logo:req.body.logo});data.audit.push(new Date().toISOString()+' - ADD CANDIDATE - '+req.body.party);save(data);return res.json({ok:true});}
-  if(path.includes('/delete-candidate')){data.candidates=data.candidates.filter(c=>c.id!==req.body.id);save(data);return res.json({ok:true});}
-  if(h!==SUPER&&!u.searchParams.get('h'))return res.send(`<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><script src="https://cdn.tailwindcss.com"></script></head><body class="bg-slate-900 flex items-center justify-center min-h-screen p-4"><div class="bg-white rounded-2xl p-8 w-full max-w-md"><h2 class="font-bold">DONT@001</h2><input id="h" placeholder="Super Hash" class="w-full border p-4 rounded-xl mt-4"><button onclick="location.href='/DONT@001?h='+document.getElementById('h').value" class="w-full bg-red-600 text-white py-3 rounded-xl mt-4">Unlock</button></div></body></html>`);
-  return res.send(`<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><script src="https://cdn.tailwindcss.com"></script></head><body class="bg-[#0F172A] text-white p-4"><div class="max-w-5xl mx-auto"><h1 class="text-2xl font-black text-center py-6">🔒 DONT@001 - ACTIVE</h1><div class="bg-white/10 rounded-2xl p-4 text-center font-bold mb-6">Voters: ${data.validIds.length} | Candidates: ${data.candidates.length} | Votes: ${Object.values(data.votes).reduce((a,b)=>a+b,0)} | Double Vote: BLOCKED ✅</div><div class="bg-white text-black rounded-2xl p-6 mb-6"><h2 class="font-black">Upload Student IDs</h2><input type="file" id="csv" class="border p-2 rounded-xl mt-2 w-full"><button onclick="upIDs()" class="bg-emerald-600 text-white px-6 py-3 rounded-xl mt-3 font-bold w-full">Import IDs - Works on Login</button><div class="mt-2 text-xs bg-gray-100 p-2 rounded-xl">${data.validIds.join(', ')}</div></div><div class="bg-white text-black rounded-2xl p-6 mb-6"><h2 class="font-black text-xl">Add Candidate A,B,C - Choose Files - Auto Reflects!</h2><div class="grid md:grid-cols-2 gap-4 mt-4"><div><label class="text-xs font-bold">President Name</label><input id="pName" class="w-full border-2 rounded-xl p-3" placeholder="JOHN FLOMO"><input type="file" id="pFile" accept="image/*" class="w-full border rounded-xl p-2 mt-2"><img id="pPrev" class="w-20 h-20 rounded-xl mt-2 hidden object-cover"></div><div><label class="text-xs font-bold">Vice President</label><input id="vName" class="w-full border-2 rounded-xl p-3" placeholder="JAMES TOE"><input type="file" id="vFile" accept="image/*" class="w-full border rounded-xl p-2 mt-2"><img id="vPrev" class="w-20 h-20 rounded-xl mt-2 hidden object-cover"></div></div><div class="mt-4"><label class="text-xs font-bold">Party Name</label><input id="party" class="w-full border-2 rounded-xl p-3" placeholder="STUDENT UNIFICATION PARTY"><input type="file" id="lFile" accept="image/*" class="w-full border rounded-xl p-2 mt-2"><img id="lPrev" class="w-20 h-20 rounded-xl mt-2 hidden object-cover"></div><button onclick="addCand()" class="w-full bg-blue-600 text-white py-4 rounded-xl font-black mt-4">Add Candidate</button><div class="mt-4 grid gap-2">${data.candidates.map((c,i)=>`<div class="border p-2 rounded-xl flex justify-between items-center"><div class="flex gap-2 items-center"><b>${String.fromCharCode(65+i)}</b><img src="${c.logo}" class="w-10 h-10 rounded object-cover"><span>${c.party} - ${c.president}/${c.vice}</span></div><button onclick="delCand('${c.id}')" class="text-red-600 text-xs">Delete</button></div>`).join('')||'No candidates'}</div></div><div class="bg-white text-black rounded-2xl p-6 mb-6"><h2 class="font-black text-lg">Audit Log - Green - Private</h2><div class="bg-[#0F172A] text-[#22C55E] font-mono text-[12px] rounded-[16px] p-4 mt-3 h-64 overflow-y-auto whitespace-pre-wrap">${(data.audit||[]).slice(-100).reverse().join('\n')||'No logs yet'}</div><div class="grid grid-cols-2 gap-3 mt-4"><button onclick="location.reload()" class="bg-slate-800 text-white py-3 rounded-xl font-bold">Refresh Log</button><button onclick="resetElection()" class="bg-red-600 text-white py-3 rounded-xl font-bold">RESET ELECTION</button></div><p class="text-xs text-gray-500 mt-2">Reset clears votes, tokens, voted IDs, audit - KEEPS candidates & IDs</p></div></div><script>let pB='',vB='',lB='';function comp(f,cb){const r=new FileReader();r.onload=e=>{const im=new Image();im.onload=()=>{const ca=document.createElement('canvas');let w=im.width,h=im.height;const m=400;if(w>h){if(w>m){h*=m/w;w=m}}else{if(h>m){w*=m/h;h=m}}ca.width=w;ca.height=h;ca.getContext('2d').drawImage(im,0,0,w,h);cb(ca.toDataURL('image/jpeg',0.6));};im.src=e.target.result;};r.readAsDataURL(f);}pFile.addEventListener('change',e=>comp(e.target.files[0],b=>{pB=b;pPrev.src=b;pPrev.classList.remove('hidden')}));vFile.addEventListener('change',e=>comp(e.target.files[0],b=>{vB=b;vPrev.src=b;vPrev.classList.remove('hidden')}));lFile.addEventListener('change',e=>comp(e.target.files[0],b=>{lB=b;lPrev.src=b;lPrev.classList.remove('hidden')}));async function api(p,b){const h=new URLSearchParams(location.search).get('h');const r=await fetch(p+'?h='+h,{method:b?'POST':'GET',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});return r.json();}async function upIDs(){const f=csv.files[0];const t=await f.text();const ids=t.split(/\\r?\\n/).map(s=>s.trim()).filter(Boolean);await api('/DONT@001/upload-ids',{ids});location.reload();}async function addCand(){await api('/DONT@001/add-candidate',{president:pName.value,vice:vName.value,party:party.value,presidentPhoto:pB,vicePhoto:vB,logo:lB});location.reload();}async function delCand(id){await api('/DONT@001/delete-candidate',{id});location.reload();}async function resetElection(){if(!confirm('RESET? Clear all votes?'))return;if(!confirm('Final confirm - Reset now?'))return;await api('/DONT@001/reset',{});alert('Reset done!');location.reload();}<\/script></body></html>`);
- }
+const defaultData = () => ({ validIds:[], candidates:[], votes:{}, votedIds:[], tokens:{}, audit:[] });
+async function load(){ let d=await kv.get(KEY); if(!d){ d=defaultData(); await kv.set(KEY,d);} return d; }
+async function save(d){ await kv.set(KEY,d); }
 
- // ================= FACULTY - LIVE RESULTS ONLY - NO AUDIT LOG - SAFE FOR PROJECTOR =================
- if(path.includes('faculty')){
-  if(path.includes('/stats')){const total=Object.values(data.votes).reduce((a,b)=>a+b,0);const cands=data.candidates.map(c=>({...c,votes:data.votes[c.id]||0}));const sorted=[...cands].sort((a,b)=>b.votes-a.votes);const lead=sorted[0];return res.json({totalVotes:total,teams:cands.length,leading:lead?.party||'NONE',candidates:sorted});}
-  if(h!==FACULTY&&!u.searchParams.get('h'))return res.send(`<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><script src="https://cdn.tailwindcss.com"></script></head><body class="bg-[#5B21B6] flex items-center justify-center min-h-screen p-4"><div class="bg-white rounded-2xl p-8 w-full max-w-md"><h2 class="font-bold">Faculty Login</h2><input id="h" placeholder="Faculty Hash" class="w-full border-2 p-4 rounded-xl mt-4"><button onclick="location.href='/faculty?h='+document.getElementById('h').value" class="w-full bg-slate-800 text-white py-3 rounded-xl mt-4">Enter Dashboard</button></div></body></html>`);
-  return res.send(`
-<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><script src="https://cdn.tailwindcss.com"></script><style>body{font-family:Inter,sans-serif}</style></head>
-<body class="bg-[#5E35B1] min-h-screen">
-<div class="bg-[#0F172A] text-white px-6 py-4 flex justify-between items-center"><div class="font-black text-sm tracking-widest">LIVE RESULTS</div><div class="bg-[#22C55E] text-[10px] font-black px-4 py-1.5 rounded-full animate-pulse">● LIVE UPDATING</div></div>
-<div class="p-4 max-w-5xl mx-auto"><div class="bg-white rounded-[24px] p-5 shadow-2xl">
-<div class="grid grid-cols-4 gap-3 mb-5">
-<div class="bg-[#F8FAFC] border rounded-[16px] p-4 text-center"><div class="text-[10px] text-gray-400 font-bold">TOTAL VOTES</div><div id="totalV" class="text-2xl font-black mt-1">0</div></div>
-<div class="bg-[#F8FAFC] border rounded-[16px] p-4 text-center"><div class="text-[10px] text-gray-400 font-bold">TEAMS</div><div id="teams" class="text-2xl font-black mt-1">0</div></div>
-<div class="bg-[#F8FAFC] border rounded-[16px] p-4 text-center"><div class="text-[10px] text-gray-400 font-bold">LEADING</div><div id="leading" class="text-[9px] font-black mt-1">-</div></div>
-<div class="bg-[#F8FAFC] border rounded-[16px] p-4 text-center"><div class="text-[10px] text-gray-400 font-bold">STATUS</div><div class="text-xs font-black mt-1 text-green-500">LIVE</div></div>
-</div>
-<div id="list" class="space-y-4"></div>
-</div></div>
-<script>
-async function load(){
- const h=new URLSearchParams(location.search).get('h');
- const r=await fetch('/faculty/stats?h='+h);const d=await r.json();
- totalV.innerText=d.totalVotes;teams.innerText=d.teams;leading.innerText=d.leading;
- list.innerHTML='';
- d.candidates.forEach((c,i)=>{
-  const pct=d.totalVotes?Math.round(c.votes/d.totalVotes*100):0;
-  const isLead=i===0&&c.votes>0;
-  list.innerHTML+=\`<div class="rounded-[18px] border-2 \${isLead?'border-yellow-200 bg-[#FFFBEB]':'border-gray-100 bg-white'} p-4"><div class="flex justify-between"><div class="flex gap-3 items-center"><img src="\${c.logo}" class="w-12 h-12 rounded-[12px] object-cover bg-gray-100"><div><div class="flex gap-2 items-center"><span class="font-black text-[14px]">\${c.party}</span>\${isLead?'<span class="text-[9px] font-black bg-yellow-400 px-2 py-0.5 rounded-full">LEADING</span>':''}</div><div class="text-[11px] text-gray-500">\${c.votes} votes • \${pct}%</div></div></div><div class="text-right"><div class="font-black">\${pct}%</div><div class="text-[11px] font-bold">\${c.votes} VOTES</div></div></div><div class="mt-3 ml-[60px]"><div class="h-2.5 bg-gray-100 rounded-full overflow-hidden"><div class="h-full bg-[#22C55E] rounded-full" style="width:\${pct}%"></div></div><div class="flex gap-4 mt-2.5"><div class="flex items-center gap-1.5 text-[11px]"><img src="\${c.presidentPhoto}" class="w-5 h-5 rounded-full object-cover"><span class="text-gray-500">President:</span><span class="font-bold">\${c.president}</span></div><div class="flex items-center gap-1.5 text-[11px]"><img src="\${c.vicePhoto}" class="w-5 h-5 rounded-full object-cover"><span class="text-gray-500">Vice:</span><span class="font-bold">\${c.vice}</span></div></div></div></div>\`;
- });
-}
-load();setInterval(load,5000);
-<\/script></body></html>`);
- }
-
- if(path.includes('/verify')&&req.method==='POST'){
-  const {studentId}=req.body;
-  if(data.votedIds.includes(studentId))return res.json({error:'❌ Already voted! No double voting! ID '+studentId+' has voted!'});
-  if(data.validIds.length&&!data.validIds.includes(studentId)&&!studentId.startsWith('LISE-'))return res.json({error:'ID not found! Contact Admin'});
-  const t=genTok();
-  data.tokens[t]={studentId,used:false,created:new Date().toISOString()};
-  data.audit.push(new Date().toISOString()+' - VERIFY - '+studentId+' -> '+t);
-  save(data);
-  return res.json({ok:true,token:t,studentId});
- }
- if(path.includes('/cast-vote')&&req.method==='POST'){
-  const {candidateId,token:tk}=req.body;
-  const tt=data.tokens[tk];
-  if(!tt)return res.json({error:'Invalid token!'});
-  if(tt.used)return res.json({error:'❌ Token already used! No double voting!'});
-  if(data.votedIds.includes(tt.studentId))return res.json({error:'❌ ID '+tt.studentId+' already voted! No double voting!'});
-  const cand=data.candidates.find(c=>c.id===candidateId);
-  data.votes[candidateId]=(data.votes[candidateId]||0)+1;
-  data.votedIds.push(tt.studentId);
-  data.tokens[tk].used=true;
-  data.audit.push(new Date().toISOString()+' - VOTE - '+tt.studentId+' '+(cand?cand.party:candidateId)+' - '+tk);
-  save(data);
-  return res.json({ok:true});
- }
- if(path.includes('/tokenpage')){
-  return res.send('<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><script src="https://cdn.tailwindcss.com"></script></head><body class="bg-[#7C3AED] min-h-screen flex items-center justify-center p-4"><div class="w-full max-w-[420px]"><div class="bg-[#0F172A] rounded-t-[28px] p-7"><h1 class="text-[32px] font-black text-white">Major<span class="text-[#38BDF8]">Tech</span> Vote</h1><p class="text-white/70">Secure token</p></div><div class="bg-white rounded-b-[28px] p-7 shadow-2xl"><div class="bg-[#22C55E] rounded-[16px] py-5 text-center"><div class="text-white font-black text-[36px] tracking-widest">'+tok+'</div></div><input id="tokInput" value="'+tok+'" class="w-full mt-5 border rounded-[16px] px-5 py-4"><p class="mt-3 text-sm text-center text-gray-500">Token for '+sid+' - Nobody can guess!</p><button onclick="goNext()" class="w-full mt-4 bg-[#0F172A] text-white font-black py-4 rounded-[16px]">ENTER > NEXT</button></div></div><script>function goNext(){location.href="/?token="+encodeURIComponent(document.getElementById("tokInput").value.trim());}<\/script></body></html>');
- }
- if(tok){
-  const t=data.tokens[tok];if(!t)return res.send('<html><body style="background:#7C3AED;display:flex;align-items:center;justify-content:center;min-height:100vh"><div style="background:white;padding:30px;border-radius:20px">Invalid Token <a href="/">Login</a></div></body></html>');if(t.used)return res.send('<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><script src="https://cdn.tailwindcss.com"></script></head><body class="bg-[#5B21B6] min-h-screen flex items-center justify-center p-4"><div class="bg-white rounded-[24px] p-10 text-center max-w-md"><div class="text-6xl">🚫</div><h1 class="text-2xl font-black mt-4">Already Voted!</h1><p class="mt-2 text-gray-500">Token '+tok+' used! No double vote!</p></div></div></body></html>');if(data.votedIds.includes(t.studentId))return res.send('<html><body style="background:#7C3AED;display:flex;align-items:center;justify-content:center;min-height:100vh"><div style="background:white;padding:30px;border-radius:20px">Already Voted! ID '+t.studentId+' voted!</div></body></html>');
-  return res.send('<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><script src="https://cdn.tailwindcss.com"></script></head><body class="bg-[#5B21B6] min-h-screen p-4"><div class="max-w-3xl mx-auto"><div class="bg-slate-900 rounded-t-[24px] p-6 text-white text-center"><h1 class="text-2xl font-black">Choose Team</h1><p class="text-white/60 text-sm">President + Vice President</p><p class="mt-2 text-xs text-green-300">Token: '+tok+' | ID: '+t.studentId+'</p></div><div class="bg-[#F8FAFC] rounded-b-[24px] p-4 space-y-6">'+(data.candidates.length===0?'<div class=text-center py-16>No Candidates Yet - Upload in DONT@001 - Auto reflects!</div>':data.candidates.map((c,i)=>'<div class="bg-white rounded-[20px] border p-5"><div class="flex items-center gap-3 mb-5"><img src="'+c.logo+'" class="w-12 h-12 rounded-xl bg-black object-cover"><div class="font-black text-sm">CANDIDATE '+String.fromCharCode(65+i)+' - '+c.party+'</div></div><div class="grid grid-cols-2 gap-6 text-center"><div><div class="w-28 h-28 mx-auto rounded-[18px] bg-gray-100 overflow-hidden border-2"><img src="'+c.presidentPhoto+'" class="w-full h-full object-cover"></div><div class="text-[10px] text-gray-500 mt-2">PRESIDENT</div><div class="font-black">'+c.president+'</div></div><div><div class="w-28 h-28 mx-auto rounded-[18px] bg-gray-100 overflow-hidden border-2"><img src="'+c.vicePhoto+'" class="w-full h-full object-cover"></div><div class="text-[10px] text-gray-500 mt-2">VICE PRESIDENT</div><div class="font-black">'+c.vice+'</div></div></div><button onclick="vote(\''+c.id+'\')" class="w-full mt-6 bg-[#22C55E] text-white font-black py-4 rounded-[16px]">VOTE FOR '+c.party+'</button></div>').join(''))+'</div></div><script>async function vote(cid){if(!confirm("Confirm vote? Only once!"))return;const r=await fetch("/cast-vote",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({candidateId:cid,token:"'+tok+'"})});const d=await r.json();if(d.error)return alert(d.error);document.body.innerHTML=\'<div class=bg-[#5B21B6] min-h-screen flex items-center justify-center p-4><div class=bg-white rounded-[24px] p-10 text-center max-w-md><div class=text-6xl>✅</div><h1 class=text-3xl font-black mt-4>Vote Successful!</h1></div></div>\';}<\/script></body></html>');
- }
- res.send('<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><script src="https://cdn.tailwindcss.com"></script></head><body class="bg-[#7C3AED] min-h-screen flex items-center justify-center p-4"><div class="w-full max-w-[420px]"><div class="bg-[#0F172A] rounded-t-[28px] p-7"><h1 class="text-[32px] font-black text-white">Major<span class="text-[#38BDF8]">Tech</span> Verify</h1><p class="text-white/70 mt-2">Official Student ID Verification</p></div><div class="bg-white rounded-b-[28px] p-7 shadow-2xl"><label class="font-black">ENTER STUDENT ID NUMBER</label><input id="sid" placeholder="e.g. LISE-046/2025" class="w-full mt-3 border rounded-[16px] px-5 py-4"><p id="msg" class="mt-3 text-sm font-bold text-center"></p><button onclick="verify()" class="w-full mt-4 bg-[#0F172A] text-white font-black py-4 rounded-[16px]">VERIFY ></button></div></div><script>async function verify(){const sid=document.getElementById("sid").value.trim();if(!sid){msg.innerText="Enter ID";msg.className="mt-3 text-sm font-bold text-center text-red-500";return;}msg.innerText="Verifying ID and generating token...";msg.className="mt-3 text-sm font-bold text-center text-gray-500";const r=await fetch("/verify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({studentId:sid})});const d=await r.json();if(d.error){msg.innerText=d.error;msg.className="mt-3 text-sm font-bold text-center text-red-500";return;}location.href="/tokenpage?token="+encodeURIComponent(d.token)+"&sid="+encodeURIComponent(d.studentId);}<\/script></body></html>');
+app.post('/api/verify', async (req,res)=>{
+  const id=String(req.body.studentId||'').trim().toUpperCase();
+  if(!id) return res.status(400).json({error:"Enter ID"});
+  const data=await load();
+  if(!data.validIds.includes(id)) return res.status(400).json({error:"ID not found!"});
+  if(data.votedIds.includes(id)) return res.status(400).json({error:"Already voted!"});
+  const token="TG"+Math.random().toString(36).substring(2,8).toUpperCase();
+  data.tokens[token]={studentId:id, used:false, created:Date.now()};
+  data.audit.push(new Date().toISOString()+" VERIFY "+id);
+  await save(data); res.json({token, studentId:id});
 });
-module.exports=app;
+
+app.post('/api/vote', async (req,res)=>{
+  const {token, candidateId}=req.body; const data=await load();
+  const t=data.tokens[token]; if(!t||t.used) return res.status(400).json({error:"Invalid token!"});
+  if(data.votedIds.includes(t.studentId)) return res.status(400).json({error:"Already voted!"});
+  data.votes[candidateId]=(data.votes[candidateId]||0)+1; data.votedIds.push(t.studentId); t.used=true;
+  data.audit.push(new Date().toISOString()+" VOTE "+t.studentId+" -> "+candidateId);
+  await save(data); res.json({ok:true});
+});
+
+app.get('/api/faculty/stats', async (req,res)=>{
+  if(req.query.h!==FACULTY_HASH && req.query.h!==SUPER_HASH) return res.status(403).json({error:"Forbidden"});
+  const data=await load(); res.json({total:data.votedIds.length, votes:data.votes, candidates:data.candidates});
+});
+
+app.get('/api/DONT@001/data', async (req,res)=>{
+  if(req.query.h!==SUPER_HASH) return res.status(403).json({error:"Forbidden"});
+  res.json(await load());
+});
+app.post('/api/DONT@001/save', async (req,res)=>{
+  if(req.query.h!==SUPER_HASH) return res.status(403).json({error:"Forbidden"});
+  const data=await load(); if(req.body.validIds) data.validIds=req.body.validIds; if(req.body.candidates) data.candidates=req.body.candidates;
+  await save(data); res.json({ok:true});
+});
+app.post('/api/DONT@001/reset', async (req,res)=>{
+  if(req.query.h!==SUPER_HASH) return res.status(403).json({error:"Forbidden"});
+  const data=await load(); data.votes={}; data.votedIds=[]; data.tokens={}; data.audit.push(new Date().toISOString()+" RESET");
+  await save(data); res.json({ok:true});
+});
+
+export default app;
