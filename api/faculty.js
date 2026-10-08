@@ -1,7 +1,7 @@
 const express=require('express');const {kv}=require('@vercel/kv');const app=express();app.use(express.urlencoded({extended:true}));
 const FACULTY_HASH=process.env.FACULTY_HASH || 'a9f3b7c2d1e8f4a6b9c2d5e8f1a3b7c9'; // 28 chars example
 
-app.all('/', async (req,res)=>{
+app.all('*', async (req,res)=>{
  const key=req.body.key||req.query.key;
  if(key!==FACULTY_HASH){
    return res.send(`<html><body style="font-family:Arial;background:#7c5cff;display:flex;justify-content:center;align-items:center;height:100vh"><div style="background:white;padding:25px;border-radius:16px;width:350px"><h3>Faculty Login - 28 Char Hash</h3><form method="POST"><input name="key" placeholder="Enter 28 char hash" style="width:100%;padding:12px"><button style="width:100%;margin-top:10px;padding:12px;background:#0f1a2e;color:white;border:none;border-radius:8px">Enter Dashboard</button></form></div></body></html>`);
