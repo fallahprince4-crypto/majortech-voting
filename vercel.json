@@ -1,10 +1,8 @@
 {
   "rewrites": [
     { "source": "/DONT@001", "destination": "/api/dont001" },
-    { "source": "/DONT@001/:path*", "destination": "/api/dont001" },
     { "source": "/dont001", "destination": "/api/dont001" },
     { "source": "/faculty", "destination": "/api/faculty" },
-    { "source": "/faculty/:path*", "destination": "/api/faculty" },
-    { "source": "/:path*", "destination": "/api/index" }
+    { "source": "/(.*)", "destination": "/api/index" }
   ]
 }
