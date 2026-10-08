@@ -1,35 +1,76 @@
-const express=require('express');const {kv}=require('@vercel/kv');const Busboy=require('busboy');const app=express();app.use(express.urlencoded({extended:true}));app.use(express.json());
-const SUPER_HASH=process.env.SUPER_HASH || 'z8x2c4v6b9n1m3q5w7e2r4t6y8u1i3o'; // 28 chars example - set in Vercel ENV
+const express = require('express');
+const fs=require('fs');
+const app=express();
+app.use(express.json({limit:'5mb'}));
+app.use(express.urlencoded({extended:true,limit:'5mb'}));
+const SUPER_HASH=process.env.SUPER_HASH||'super-28-char-hash-demo-123456789';
+const DATA_PATH='/tmp/voting-data.json';
+function getData(){try{if(!fs.existsSync(DATA_PATH))return{votes:{},candidates:[],votedIds:[],validIds:[],audit:[]};return JSON.parse(fs.readFileSync(DATA_PATH,'utf8'));}catch{return{votes:{},candidates:[],votedIds:[],validIds:[],audit:[]}}}
+function saveData(d){fs.writeFileSync(DATA_PATH,JSON.stringify(d));}
 
-app.all('*', async (req,res)=>{
- const key=req.body.key||req.query.key;
- if(req.method==='GET' && key!==SUPER_HASH){
-   return res.send(`<html><body style="font-family:Arial;background:#0f1a2e;display:flex;justify-content:center;align-items:center;height:100vh"><div style="background:white;padding:25px;border-radius:16px;width:400px"><h2>DONT@001 Super Admin - 28 Char Hash</h2><form method="POST"><input name="key" placeholder="Enter 28 char super hash" required style="width:100%;padding:12px;border-radius:8px;border:1px solid #ccc"><button style="width:100%;margin-top:10px;padding:12px;background:#dc3545;color:white;border:none;border-radius:8px">Unlock Vault</button></form></div></body></html>`);
+app.all('*', (req,res)=>{
+ const url=new URL(req.url,'https://example.com');
+ const hash=url.searchParams.get('h')||req.body?.hash;
+ if(url.pathname.includes('/data')){const d=getData();return res.json(d);}
+ if(url.pathname.includes('/reset')&&req.method==='POST'){saveData({votes:{},candidates:[],votedIds:[],validIds:[],audit:[]});return res.json({ok:true});}
+ if(url.pathname.includes('/upload-ids')&&req.method==='POST'){const d=getData();d.validIds=(req.body.ids||[]);d.audit.push(new Date().toISOString()+' - UPLOAD IDS '+(d.validIds.length));saveData(d);return res.json({ok:true,count:d.validIds.length});}
+ if(url.pathname.includes('/add-candidate')&&req.method==='POST'){const d=getData();d.candidates.push({id:'C'+(d.candidates.length+1),party:req.body.party,president:req.body.president,vice:req.body.vice,photo:req.body.photo});d.audit.push(new Date().toISOString()+' - ADD CANDIDATE '+req.body.party);saveData(d);return res.json({ok:true});}
+
+ const authed = hash===SUPER_HASH;
+ if(!authed && req.method==='GET' &&!url.searchParams.get('h')){
+  return res.send(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><script src="https://cdn.tailwindcss.com"></script></head><body class="bg-slate-900 min-h-screen flex items-center justify-center p-4"><div class="bg-white rounded-2xl p-8 w-full max-w-md"><h2 class="text-xl font-bold mb-4">DONT@001 Super Admin - 28 Char Hash</h2><input id="h" placeholder="Enter 28 char super hash" class="w-full border rounded-xl p-4 mb-4"><button onclick="location.href='/DONT@001?h='+document.getElementById('h').value" class="w-full bg-red-500 text-white py-3 rounded-xl font-bold">Unlock Vault</button></div></body></html>`);
  }
- if(key!==SUPER_HASH && req.body.key!==SUPER_HASH) return res.status(403).send('Wrong hash');
+ res.send(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><script src="https://cdn.tailwindcss.com"></script></head>
+<body class="bg-[#0F172A] min-h-screen text-white p-4">
+<div class="max-w-5xl mx-auto">
+<h1 class="text-2xl font-black text-center py-6">🔒 SECRET ADMIN - DONT@001</h1>
+<div class="flex flex-wrap justify-center gap-3 mb-8">
+<button onclick="scrollToSec('cands')" class="bg-green-500 px-6 py-3 rounded-2xl font-black">Green E = Candidates</button>
+<button onclick="scrollToSec('reset')" class="bg-red-500 px-6 py-3 rounded-2xl font-black">Red R = Reset</button>
+<button onclick="scrollToSec('audit')" class="bg-blue-500 px-6 py-3 rounded-2xl font-black">Blue A = Audit</button>
+<button onclick="scrollToSec('upload')" class="bg-yellow-400 text-black px-6 py-3 rounded-2xl font-black">Yellow = Upload IDs</button>
+<button onclick="location.href='/faculty?h='+new URLSearchParams(location.search).get('h')" class="bg-purple-600 px-6 py-3 rounded-2xl font-black">Purple % = Results</button>
+</div>
 
- const votes=(await kv.get('votes'))||[]; const audit=(await kv.get('audit'))||[]; const candidates=(await kv.get('candidates'))||[]; const voters=(await kv.get('voters'))||[];
- res.send(`<html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:Arial;background:#f4f6f9;padding:20px"><div style="max-width:700px;margin:0 auto;background:white;padding:20px;border-radius:16px">
- <h2>Super Admin Vault - DONT@001</h2><p>Voters: ${voters.length} | Votes: ${votes.length} | Candidates: ${candidates.length}</p>
- <hr><h3>1. Upload Real Student IDs (CSV)</h3><form action="/DONT@001/import" method="POST" enctype="multipart/form-data"><input type="hidden" name="key" value="${SUPER_HASH}"><input type="file" name="file" required><button style="background:#198754;color:white;padding:8px 14px;border:none;border-radius:6px">Import IDs</button></form>
- <hr><h3>2. Add Candidate (President/Vice/Party)</h3><form action="/DONT@001/candidate" method="POST"><input type="hidden" name="key" value="${SUPER_HASH}"><input name="president" placeholder="President Name" required style="width:100%;padding:8px;margin:4px 0"><input name="vice" placeholder="Vice President Name" style="width:100%;padding:8px;margin:4px 0"><input name="party" placeholder="Party Name" style="width:100%;padding:8px;margin:4px 0"><input name="photo" placeholder="Photo URL or Letter" style="width:100%;padding:8px;margin:4px 0"><button style="background:#0b5ed7;color:white;padding:8px 14px;border:none;border-radius:6px">Add Candidate</button></form>
- <hr><h3>3. Audit Log</h3><div style="background:#f8f9fa;padding:10px;max-height:150px;overflow:auto;font-family:monospace;font-size:12px">${audit.slice(-20).reverse().map(a=>`${a.time} - ${a.action}`).join('<br>')||'No logs'}</div>
- <hr><h3>4. Danger - Reset</h3><form action="/DONT@001/reset" method="POST"><input type="hidden" name="key" value="${SUPER_HASH}"><button style="background:#dc3545;color:white;padding:10px 18px;border:none;border-radius:8px">🔴 RESET ALL VOTES</button></form>
- <p><a href="/">← Voter Home</a> | <a href="/faculty?key=${SUPER_HASH}">Faculty View</a></p>
- </div></body></html>`);
-});
+<div id="stats" class="bg-white/10 rounded-2xl p-4 flex gap-6 justify-center mb-6 font-bold"></div>
 
-app.post('/DONT@001/import',(req,res)=>{
- const busboy=Busboy({headers:req.headers});let fileContent='';let key='';
- busboy.on('field',(n,v)=>{if(n==='key')key=v}); busboy.on('file',(n,file)=>{file.on('data',d=>fileContent+=d.toString())});
- busboy.on('finish',async()=>{if(key!==SUPER_HASH)return res.send('Wrong hash');const ids=fileContent.split(/[\n,\r,]+/).map(s=>s.trim().toUpperCase()).filter(s=>s.startsWith('LISE-'));await kv.set('voters',ids);await kv.set('tokenMap',{});await kv.set('usedTokens',[]);await kv.set('votes',[]);const audit=(await kv.get('audit'))||[];audit.push({action:`Imported ${ids.length} voters`,time:new Date().toISOString()});await kv.set('audit',audit);res.redirect('/DONT@001?key='+SUPER_HASH);});req.pipe(busboy);
-});
-app.post('/DONT@001/candidate',async(req,res)=>{
- if(req.body.key!==SUPER_HASH)return res.send('Wrong hash');
- const candidates=(await kv.get('candidates'))||[];candidates.push({id:Date.now().toString(),president:req.body.president,vice:req.body.vice,party:req.body.party,photo:req.body.photo||'C'});await kv.set('candidates',candidates);res.redirect('/DONT@001?key='+SUPER_HASH);
-});
-app.post('/DONT@001/reset',async(req,res)=>{
- if(req.body.key!==SUPER_HASH)return res.send('Wrong hash');await kv.set('votes',[]);await kv.set('usedTokens',[]);await kv.set('tokenMap',{});const audit=(await kv.get('audit'))||[];audit.push({action:'RESET ALL',time:new Date().toISOString()});await kv.set('audit',audit);res.redirect('/DONT@001?key='+SUPER_HASH);
-});
+<div id="upload" class="bg-white text-black rounded-2xl p-6 mb-6">
+<h2 class="font-black text-xl mb-3">1. Upload Real Student IDs (CSV)</h2>
+<input type="file" id="csv" class="mb-3"><button onclick="uploadIDs()" class="bg-emerald-600 text-white px-4 py-2 rounded-xl">Import IDs</button>
+<div id="upRes" class="mt-2 text-sm"></div>
+</div>
 
+<div id="cands" class="bg-white text-black rounded-2xl p-6 mb-6">
+<h2 class="font-black text-xl mb-3">2. Add Candidate (President/Vice/Party)</h2>
+<input id="pName" placeholder="President Name" class="w-full border rounded-xl p-3 mb-2">
+<input id="vName" placeholder="Vice President Name" class="w-full border rounded-xl p-3 mb-2">
+<input id="party" placeholder="Party Name" class="w-full border rounded-xl p-3 mb-2">
+<input id="photo" placeholder="Photo URL or Letter (ex: T or https://...)" class="w-full border rounded-xl p-3 mb-3">
+<button onclick="addCand()" class="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold">Add Candidate</button>
+<div id="candList" class="mt-4 grid gap-2"></div>
+</div>
+
+<div id="audit" class="bg-white text-black rounded-2xl p-6 mb-6">
+<h2 class="font-black text-xl mb-2">🔵 Audit (Blue A) - Secret Ballot Safe</h2><p class="text-sm text-gray-500 mb-3">Shows WHO voted (no candidate) + anonymous counts (no student) - never linked.</p>
+<button onclick="loadAudit()" class="bg-blue-600 text-white px-5 py-3 rounded-xl font-bold">Load Audit</button>
+<pre id="auditBox" class="bg-slate-900 text-green-300 p-4 rounded-xl mt-4 text-xs overflow-auto max-h-96"></pre>
+</div>
+
+<div id="reset" class="bg-white text-black rounded-2xl p-6 mb-10 border-2 border-red-200">
+<h2 class="font-black text-xl mb-3">4. Danger - Reset</h2>
+<button onclick="resetAll()" class="bg-red-600 text-white px-6 py-3 rounded-xl font-black">RESET ALL VOTES</button>
+<div class="mt-3 text-sm"><a href="/" class="text-blue-600 underline">← Voter Home</a> | <a href="/faculty" class="text-blue-600 underline">Faculty View</a></div>
+</div>
+</div>
+<script>
+function scrollToSec(id){document.getElementById(id).scrollIntoView({behavior:'smooth'})}
+async function api(p,body){const h=new URLSearchParams(location.search).get('h');const r=await fetch(p+(p.includes('?')?'&':'?')+'h='+h,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});return r.json();}
+async function loadStats(){const d=await api('/DONT@001/data');document.getElementById('stats').innerHTML='Voters: '+(d.validIds?.length||0)+' | Votes: '+Object.values(d.votes||{}).reduce((a,b)=>a+b,0)+' | Candidates: '+(d.candidates?.length||0);document.getElementById('candList').innerHTML=(d.candidates||[]).map(c=>'<div class=border p-2 rounded-xl>'+c.party+' - '+c.president+' / '+c.vice+'</div>').join('');}
+async function uploadIDs(){const f=document.getElementById('csv').files[0];if(!f)return alert('Choose file');const t=await f.text();const ids=t.split(/\\r?\\n/).map(s=>s.trim()).filter(Boolean);const r=await api('/DONT@001/upload-ids',{ids});document.getElementById('upRes').innerText='Imported '+r.count+' IDs';loadStats();}
+async function addCand(){const body={president:document.getElementById('pName').value,vice:document.getElementById('vName').value,party:document.getElementById('party').value,photo:document.getElementById('photo').value};if(!body.party)return alert('Party required');await api('/DONT@001/add-candidate',body);alert('Added!');loadStats();}
+async function loadAudit(){const d=await api('/DONT@001/data');document.getElementById('auditBox').innerText=JSON.stringify({totalVotes:Object.values(d.votes||{}).reduce((a,b)=>a+b,0),votedIds:d.votedIds,pendingTokens:(d.validIds?.length||0)-(d.votedIds?.length||0),votes:d.votes,validIdsCount:d.validIds?.length||0,audit:d.audit},null,2);}
+async function resetAll(){if(!confirm('RESET ALL? This deletes votes!'))return;await api('/DONT@001/reset',{});alert('Reset done');loadStats();}
+loadStats();
+</script></body></html>`);
+});
 module.exports=app;
