@@ -1,8 +1,5 @@
 {
   "rewrites": [
-    { "source": "/DONT@001", "destination": "/api/dont001" },
-    { "source": "/dont001", "destination": "/api/dont001" },
-    { "source": "/faculty", "destination": "/api/faculty" },
     { "source": "/(.*)", "destination": "/api/index" }
   ]
 }
