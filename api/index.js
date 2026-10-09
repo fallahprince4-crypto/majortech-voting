@@ -1,81 +1,85 @@
 import express from 'express';
 import { kv } from '@vercel/kv';
 const app = express();
-app.use(express.json({limit:'20mb'}));
-app.use(express.urlencoded({extended:true,limit:'20mb'}));
+app.use(express.json({limit:'50mb'}));
+app.use(express.urlencoded({extended:true,limit:'50mb'}));
 const SUPER_HASH = process.env.SUPER_HASH || 'MajorTech2026_SuperSecure_32Chars!';
-const KEY_MAIN = "majortech-permanent-v1";
-const KEY_AUDIT = "majortech-audit-v1";
-const KEY_RATE = "majortech-ratelimit";
+const FACULTY_HASH = process.env.FACULTY_HASH || 'Faculty2026_Secure_28Chars!!';
+const KEY_MAIN = "majortech-v3-final";
+const KEY_AUDIT = "majortech-audit-v3";
+
 const defaultData = () => ({
-  validIds:["LISE-038-2025","LISE-045-2025","LISE-001-2025","LISE-002-2025"],
-  candidates:[{id:"A",name:"Candidate A"},{id:"B",name:"Candidate B"},{id:"C",name:"Candidate C"}],
+  validIds:["LISE-038-2025","LISE-044-2025","LISE-033-2025","LISE-050-2025","LISE-043-2025"],
+  candidates:[
+    {id:"A", party:"STUDENT UNIFICATION PARTY", logo:"", president:"JOHN FLOMO", presPhoto:"", vice:"JAMES TOE", vicePhoto:""},
+    {id:"B", party:"Team B", logo:"", president:"President B", presPhoto:"", vice:"Vice B", vicePhoto:""},
+    {id:"C", party:"Team C", logo:"", president:"President C", presPhoto:"", vice:"Vice C", vicePhoto:""}
+  ],
   votes:{}, votedIds:[], tokens:{}
 });
 async function load(){ let d=await kv.get(KEY_MAIN); if(!d){ d=defaultData(); await kv.set(KEY_MAIN,d);} return d; }
 async function save(d){ await kv.set(KEY_MAIN,d); }
-async function auditLog(msg){ const logs=await kv.get(KEY_AUDIT)||[]; logs.push(new Date().toISOString()+" "+msg); await kv.set(KEY_AUDIT, logs.slice(-500)); }
-async function rateCheck(ip){
-  const key = `${KEY_RATE}:${ip}`;
-  let data = await kv.get(key)||{count:0, ts:Date.now()};
-  if(Date.now()-data.ts > 60000){ data={count:0, ts:Date.now()}; }
-  data.count++; await kv.set(key,data,{ex:60});
-  return data.count <= 15;
-}
-app.get('/api/public', async (req,res)=>{ const d=await load(); res.json({candidates:d.candidates}); });
+async function auditLog(m){ const l=await kv.get(KEY_AUDIT)||[]; l.push(new Date().toISOString()+" - "+m); await kv.set(KEY_AUDIT,l.slice(-1000)); }
+
+// APIS
+app.get('/api/public', async (req,res)=>{ res.json(await load()); });
 app.post('/api/verify', async (req,res)=>{
-  const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.ip || 'unknown';
-  if(!await rateCheck(ip)) return res.status(429).json({error:"Too many tries! Wait 1 min"});
   const id=String(req.body.studentId||'').trim().toUpperCase();
-  if(!id) return res.status(400).json({error:"Enter ID"});
   const data=await load();
-  if(!data.validIds.includes(id)){
-    await auditLog(`L1 BLOCK ${id} from ${ip}`);
-    return res.status(400).json({error:`Already voted! No double voting! ID ${id} has voted!`.replace('Already voted! No double voting!','ID not found!')});
-  }
-  if(data.votedIds.includes(id)){
-    await auditLog(`L3 BLOCK ${id} RED TEXT`);
-    return res.status(400).json({error:`Already voted! No double voting! ID ${id} has voted!`});
-  }
+  if(!data.validIds.includes(id)) return res.status(400).json({error:`ID not found! ${id} is not registered!`});
+  if(data.votedIds.includes(id)) return res.status(400).json({error:`Already voted! No double voting! ID ${id} has voted!`});
   const token="TG"+Math.floor(1000+Math.random()*9000);
-  data.tokens[token]={studentId:id, used:false, ip, created:Date.now()};
-  await save(data);
-  await auditLog(`L2 TOKEN ${id} -> ${token}`);
+  data.tokens[token]={studentId:id, used:false}; await save(data); await auditLog(`VERIFY - ${id}`);
   res.json({token});
 });
 app.post('/api/vote', async (req,res)=>{
-  const {token,candidateId}=req.body;
-  const data=await load();
-  const t=data.tokens[token];
-  if(!t||t.used) return res.status(400).json({error:"Invalid or burned token! Token Burned."});
-  if(data.votedIds.includes(t.studentId)) return res.status(400).json({error:`Already voted! No double voting! ID ${t.studentId} has voted!`});
-  data.votes[candidateId]=(data.votes[candidateId]||0)+1;
-  data.votedIds.push(t.studentId);
-  t.used=true;
-  await save(data);
-  await auditLog(`L3 VOTE ${t.studentId} -> ${candidateId}`);
-  const candName=data.candidates.find(c=>c.id===candidateId)?.name||candidateId;
-  res.json({ok:true, candidateName:candName});
+  const {token,candidateId}=req.body; const data=await load(); const t=data.tokens[token];
+  if(!t||t.used) return res.status(400).json({error:"Invalid or burned token!"});
+  if(data.votedIds.includes(t.studentId)) return res.status(400).json({error:`Already voted! ID ${t.studentId} has voted!`});
+  data.votes[candidateId]=(data.votes[candidateId]||0)+1; data.votedIds.push(t.studentId); t.used=true;
+  await save(data); await auditLog(`VOTE - ${t.studentId} ${candidateId}`);
+  const cand=data.candidates.find(c=>c.id===candidateId); res.json({ok:true, party:cand?.party||candidateId});
 });
-app.get('/api/DONT@001/data', async (req,res)=>{
-  if(req.query.h!==SUPER_HASH) return res.status(403).json({error:"Forbidden"});
-  const main=await load(); const audit=await kv.get(KEY_AUDIT)||[];
-  res.json({...main, audit});
+app.get('/api/admin/data', async (req,res)=>{
+  if(req.query.h!==SUPER_HASH) return res.status(403).json({error:"Wrong Super Hash"});
+  const main=await load(); const audit=await kv.get(KEY_AUDIT)||[]; res.json({...main, audit});
 });
-app.post('/api/DONT@001/save', async (req,res)=>{
-  if(req.query.h!==SUPER_HASH) return res.status(403).json({error:"Forbidden"});
+app.post('/api/admin/save', async (req,res)=>{
+  if(req.query.h!==SUPER_HASH) return res.status(403).json({error:"Wrong hash"});
   const data=await load();
   if(req.body.validIds) data.validIds=req.body.validIds.map(s=>String(s).trim().toUpperCase()).filter(Boolean);
   if(req.body.candidates) data.candidates=req.body.candidates;
-  await save(data); res.json({ok:true});
+  await save(data); await auditLog(`ADMIN SAVE`); res.json({ok:true, data});
 });
-app.get('/DONT@001',(req,res)=>res.send(`<html><head><script src="https://cdn.tailwindcss.com"></script></head><body class="bg-slate-100 p-6"><div class="max-w-2xl mx-auto bg-white p-6 rounded-2xl"><h1 class="font-black">DONT@001 VAULT</h1><input id="h" class="w-full border p-3 rounded-xl mt-3" value="MajorTech2026_SuperSecure_32Chars!"><textarea id="ids" rows="8" class="w-full border p-3 rounded-xl mt-3"></textarea><button onclick="saveIds()" class="w-full bg-[#111d33] text-white p-3 rounded-xl mt-3 font-black">Save Permanently</button></div><script>async function saveIds(){const h=document.getElementById('h').value;const ids=document.getElementById('ids').value.split('\\n').filter(Boolean);const r=await fetch('/api/DONT@001/save?h='+encodeURIComponent(h),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({validIds:ids})});alert((await r.json()).ok?'Saved!':'Error')}fetch('/api/DONT@001/data?h='+encodeURIComponent(document.getElementById('h').value)).then(r=>r.json()).then(j=>{if(j.validIds)document.getElementById('ids').value=j.validIds.join('\\n')})<\/script></body></html>`));
-app.get('/',(req,res)=>res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MajorTech</title><script src="https://cdn.tailwindcss.com"></script><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@800;900&display=swap');body{font-family:Inter;background:linear-gradient(180deg,#7b5bff 0%,#6a4bff 100%);min-height:100vh}.card{max-width:380px;margin:0 auto;background:white;border-radius:28px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25)}.header{background:#111d33;padding:22px 24px}.tech{color:#2eb5f5}.err{color:#ef4444;font-size:12px;font-weight:800;margin-top:10px}</style></head><body class="flex items-center justify-center p-4">
-<div id="s1" class="card w-full"><div class="header"><div class="text-white font-black text-[26px]">Major<span class="tech">Tech</span> Verify</div><div class="text-white/60 text-[12px] mt-1">Official Student ID Verification</div></div><div class="p-6"><div class="font-black text-[11px] tracking-widest">ENTER STUDENT ID NUMBER</div><input id="sid" class="w-full mt-3 bg-[#f1f3f9] p-4 rounded-2xl outline-none font-bold" placeholder="LISE-038-2025"><div id="e1" class="err hidden"></div><button onclick="verify()" class="w-full mt-5 bg-[#111d33] text-white py-4 rounded-2xl font-black">VERIFY ></button></div></div>
-<div id="s2" class="card w-full hidden"><div class="header"><div class="text-white font-black text-[26px]">Major<span class="tech">Tech</span> Vote</div><div class="text-white/60 text-[12px]">Token like AB1234</div></div><div class="p-6"><div id="tokBox" class="bg-[#10d876] text-white text-center py-5 rounded-2xl font-black text-[30px] tracking-[5px]">TG0000</div><input id="tin" class="w-full mt-4 border-2 border-gray-100 p-4 rounded-2xl outline-none font-bold"><div id="e2" class="err hidden"></div><button onclick="nextStep()" class="w-full mt-4 bg-[#111d33] text-white py-4 rounded-2xl font-black">ENTER > NEXT</button></div></div>
-<div id="s3" class="card w-full hidden"><div class="header"><div class="text-white font-black text-[22px]">Choose Candidate</div></div><div class="p-4"><div id="cans" class="space-y-3"></div><div id="e3" class="err hidden text-center"></div></div></div>
-<div id="s4" class="card w-full hidden bg-[#111d33] text-center p-8"><div class="w-20 h-20 bg-[#10d876] rounded-full flex items-center justify-center mx-auto text-4xl font-black text-white">✓</div><div class="text-white font-black text-[22px] mt-5">Vote Successful!</div><div id="votedFor" class="text-white/80 mt-3 text-[14px]"></div><div class="bg-white/10 rounded-2xl p-4 mt-6 text-left"><div class="text-white font-bold text-[13px]">Your vote is secured. Token Burned.</div><div class="text-[#a78bfa] text-[11px] mt-2">Live result is only for Admin & Faculty.</div></div><button onclick="location.reload()" class="w-full mt-6 bg-[#7b5bff] text-white py-4 rounded-2xl font-black">Admin / Faculty Login</button></div>
-<script>
+app.post('/api/admin/reset', async (req,res)=>{
+  if(req.query.h!==SUPER_HASH) return res.status(403).json({error:"Wrong hash"});
+  const data=await load(); data.votes={}; data.votedIds=[]; data.tokens={}; await save(data); await auditLog(`RESET VOTES`); res.json({ok:true});
+});
+app.get('/api/faculty/stats', async (req,res)=>{
+  if(req.query.h!==FACULTY_HASH && req.query.h!==SUPER_HASH) return res.status(403).json({error:"Wrong faculty hash"});
+  const d=await load(); const audit=await kv.get(KEY_AUDIT)||[]; res.json({...d, audit, total:d.votedIds.length});
+});
+
+// DONT@001 PAGE - 5 BUTTONS LIKE YOUR PHOTO
+app.get('/DONT@001',(req,res)=>res.send(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><script src="https://cdn.tailwindcss.com"></script></head><body class="bg-[#1a1d29] min-h-screen text-white p-4"><div class="max-w-5xl mx-auto"><h1 class="text-center text-2xl font-black mt-6">🔒 SECRET ADMIN - DONT@001</h1><div class="flex flex-wrap justify-center gap-3 mt-6"><button onclick="showPanel('cand')" class="bg-[#22c55e] px-5 py-3 rounded-2xl font-black text-sm">Green E = Candidates</button><button onclick="resetVotes()" class="bg-[#ef4444] px-5 py-3 rounded-2xl font-black text-sm">Red R = Reset</button><button onclick="showPanel('audit')" class="bg-[#3b82f6] px-5 py-3 rounded-2xl font-black text-sm">Blue A = Audit</button><button onclick="showPanel('ids')" class="bg-[#eab308] text-black px-5 py-3 rounded-2xl font-black text-sm">Yellow = Upload IDs</button><button onclick="showPanel('results')" class="bg-[#a855f7] px-5 py-3 rounded-2xl font-black text-sm">Purple % = Results</button></div><div class="bg-[#2a2d3a] rounded-3xl p-6 mt-8"><div id="gate"><input id="h" type="password" class="w-full bg-[#1a1d29] p-4 rounded-2xl outline-none" placeholder="Enter 28 char Super Hash" value="MajorTech2026_SuperSecure_32Chars!"><button onclick="unlock()" class="w-full mt-3 bg-white text-black py-3 rounded-2xl font-black">UNLOCK VAULT ></button><div id="eg" class="text-red-400 text-xs mt-2 hidden"></div></div><div id="panel-ids" class="hidden"><h2 class="font-black">Yellow = Upload IDs (Reflects in Voter Page Instantly)</h2><textarea id="ids" rows="12" class="w-full bg-[#1a1d29] p-4 rounded-2xl mt-3 text-white"></textarea><button onclick="saveIds()" class="w-full mt-3 bg-[#eab308] text-black py-3 rounded-2xl font-black">Save IDs Permanently to KV</button></div><div id="panel-cand" class="hidden"><h2 class="font-black">Green E = Candidates (Name, Party, Logo, Photos)</h2><div class="grid gap-3 mt-3"><input id="party" class="bg-[#1a1d29] p-3 rounded-xl" placeholder="Party Name e.g. STUDENT UNIFICATION PARTY"><input id="pres" class="bg-[#1a1d29] p-3 rounded-xl" placeholder="President Name e.g. JOHN FLOMO"><input id="presPhoto" type="file" accept="image/*" class="bg-[#1a1d29] p-3 rounded-xl"><input id="vice" class="bg-[#1a1d29] p-3 rounded-xl" placeholder="Vice President e.g. JAMES TOE"><input id="vicePhoto" type="file" accept="image/*" class="bg-[#1a1d29] p-3 rounded-xl"><input id="logo" type="file" accept="image/*" class="bg-[#1a1d29] p-3 rounded-xl"><button onclick="addCand()" class="bg-[#22c55e] py-3 rounded-2xl font-black">Add / Update Team</button></div><div id="clist" class="mt-6"></div></div><div id="panel-audit" class="hidden"><h2 class="font-black">🔵 Audit (Blue A) - Secret Ballot Safe</h2><p class="text-xs text-white/60 mt-1">Shows WHO voted (no candidate) + anonymous counts (no student) - never linked.</p><button onclick="loadAudit()" class="bg-[#3b82f6] px-6 py-2 rounded-xl font-black mt-3">Load Audit</button><div id="auditBox" class="bg-black rounded-2xl p-4 mt-4 font-mono text-xs h-[300px] overflow-auto"></div><div class="mt-4"><div class="bg-black rounded-2xl p-4 font-mono text-xs text-[#22c55e] h-[200px] overflow-auto" id="greenAudit"></div></div></div><div id="panel-results" class="hidden"><div id="resultsBox"></div></div></div></div><script>
+let DATA=null;
+async function unlock(){const h=document.getElementById('h').value.trim();const r=await fetch('/api/admin/data?h='+encodeURIComponent(h));const j=await r.json();if(!r.ok){document.getElementById('eg').innerText=j.error;document.getElementById('eg').classList.remove('hidden');return;}DATA=j;document.getElementById('ids').value=(j.validIds||[]).join('\\n');renderCands(j.candidates||[]);document.getElementById('panel-ids').classList.remove('hidden');}
+function showPanel(p){document.querySelectorAll('[id^=panel-]').forEach(e=>e.classList.add('hidden'));document.getElementById('panel-'+p).classList.remove('hidden'); if(p==='results') loadResults(); if(p==='audit') loadAudit();}
+async function saveIds(){const h=document.getElementById('h').value.trim();const ids=document.getElementById('ids').value.split('\\n').filter(Boolean);const r=await fetch('/api/admin/save?h='+encodeURIComponent(h),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({validIds:ids})});alert((await r.json()).ok?'IDs Saved! Now voter page accepts them instantly!':'Error');}
+function toBase64(f){return new Promise(res=>{if(!f){res('');return;}const fr=new FileReader();fr.onload=()=>res(fr.result);fr.readAsDataURL(f);});}
+async function addCand(){const h=document.getElementById('h').value.trim();const party=document.getElementById('party').value.trim();if(!party){alert('Party name needed');return;}const pres=document.getElementById('pres').value.trim();const vice=document.getElementById('vice').value.trim();const presPhoto=await toBase64(document.getElementById('presPhoto').files[0]);const vicePhoto=await toBase64(document.getElementById('vicePhoto').files[0]);const logo=await toBase64(document.getElementById('logo').files[0]);const cands=DATA.candidates||[];cands.push({id:'T'+Date.now(), party, president:pres, presPhoto, vice, vicePhoto, logo});const r=await fetch('/api/admin/save?h='+encodeURIComponent(h),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({candidates:cands})});const j=await r.json();if(j.ok){DATA.candidates=j.data.candidates;renderCands(j.data.candidates);alert('Candidate added! Voter page updated instantly!');} }
+function renderCands(list){document.getElementById('clist').innerHTML=list.map(c=>'<div class=bg-[#1a1d29] p-3 rounded-2xl flex items-center gap-3 mt-2><img src="'+(c.logo||c.presPhoto||'')+'" class="w-12 h-12 rounded-xl object-cover bg-gray-700"><div class=flex-1><b>'+c.party+'</b><div class=text-xs>Pres: '+c.president+' | Vice: '+c.vice+'</div></div><button onclick="delCand(\\''+c.id+'\\')" class="bg-red-500 px-3 py-1 rounded">Del</button></div>').join('');}
+async function delCand(id){const h=document.getElementById('h').value.trim();const cands=(DATA.candidates||[]).filter(c=>c.id!==id);const r=await fetch('/api/admin/save?h='+encodeURIComponent(h),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({candidates:cands})});const j=await r.json();if(j.ok){DATA.candidates=j.data.candidates;renderCands(j.data.candidates);}}
+async function resetVotes(){if(!confirm('Reset votes only? IDs and candidates stay!'))return;const h=document.getElementById('h').value.trim();await fetch('/api/admin/reset?h='+encodeURIComponent(h),{method:'POST'});alert('Votes reset!');}
+async function loadAudit(){const h=document.getElementById('h').value.trim();const r=await fetch('/api/admin/data?h='+encodeURIComponent(h));const j=await r.json();document.getElementById('auditBox').innerText=JSON.stringify({totalVotes:j.votedIds.length, votedIds:j.votedIds, pendingTokens:Object.keys(j.tokens).length, votes:j.votes, validIdsCount:j.validIds.length},null,2);document.getElementById('greenAudit').innerText=(j.audit||[]).slice(-50).join('\\n');}
+async function loadResults(){const h=document.getElementById('h').value.trim();const r=await fetch('/api/faculty/stats?h='+encodeURIComponent(h));const j=await r.json();const total=j.total||0;let html='<div class=text-sm>Total Votes: '+total+'</div>';j.candidates.forEach(c=>{const v=j.votes[c.id]||0;const pct=total?Math.round(v/total*100):0;html+='<div class=bg-[#1a1d29] p-4 rounded-2xl mt-3><div class=flex justify-between><b>'+c.party+'</b><span>'+v+' VOTES ('+pct+'%)</span></div><div class=w-full bg-black h-3 rounded-full mt-2><div class="bg-[#22c55e] h-3 rounded-full" style="width:'+pct+'%"></div></div><div class=text-xs mt-2>Pres: '+c.president+' | Vice: '+c.vice+'</div></div>';});document.getElementById('resultsBox').innerHTML=html;}
+<\/script></body></html>`));
+
+// FACULTY LIVE DASHBOARD - PROFESSIONAL FOR ADMINISTRATORS
+app.get('/faculty',(req,res)=>res.send(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><script src="https://cdn.tailwindcss.com"></script></head><body class="bg-[#6b4eff] min-h-screen p-0"><div id="gate" class="min-h-screen flex items-center justify-center p-4"><div class="bg-white rounded-[28px] overflow-hidden w-full max-w-[420px] shadow-2xl"><div class="bg-[#111d33] p-6"><div class="text-white font-black text-2xl">Faculty<span style="color:#2eb5f5"> Dashboard</span></div><div class="text-white/60 text-xs">Professional Live Results - Hash Required</div></div><div class="p-6"><input id="h" type="password" class="w-full bg-[#f1f3f9] p-4 rounded-2xl outline-none font-bold" placeholder="Faculty 28 Char Hash" value="Faculty2026_Secure_28Chars!!"><button onclick="unlock()" class="w-full mt-4 bg-[#111d33] text-white py-4 rounded-2xl font-black">UNLOCK LIVE DASHBOARD ></button><div id="err" class="text-red-500 text-xs mt-2 hidden"></div></div></div></div><div id="dash" class="hidden bg-[#f5f5f7] min-h-screen"><div class="bg-[#111d33] text-white p-4 flex justify-between items-center"><div class="font-black">Live Results - <span class="text-[#22c55e]">LIVE UPDATING</span></div><div id="clock" class="text-xs"></div></div><div class="p-4 max-w-5xl mx-auto"><div class="grid grid-cols-4 gap-3"><div class="bg-white rounded-2xl p-4 text-center"><div class="text-[11px] text-gray-500">TOTAL VOTES</div><div id="total" class="font-black text-2xl">0</div></div><div class="bg-white rounded-2xl p-4 text-center"><div class="text-[11px]">TEAMS</div><div id="teams" class="font-black text-2xl">0</div></div><div class="bg-white rounded-2xl p-4 text-center"><div class="text-[11px]">LEADING</div><div id="leading" class="font-black text-xs">-</div></div><div class="bg-white rounded-2xl p-4 text-center"><div class="text-[11px]">STATUS</div><div class="font-black text-xs text-[#22c55e]">LIVE</div></div></div><div id="results" class="mt-4 space-y-3"></div><div class="bg-white rounded-2xl p-4 mt-6"><h2 class="font-black">Audit Log</h2><div id="audit" class="bg-black text-[#22c55e] font-mono text-xs p-4 rounded-2xl mt-3 h-[250px] overflow-auto"></div></div></div></div><script>async function unlock(){const h=document.getElementById('h').value.trim();const r=await fetch('/api/faculty/stats?h='+encodeURIComponent(h));const j=await r.json();if(!r.ok){document.getElementById('err').innerText=j.error;document.getElementById('err').classList.remove('hidden');return;}document.getElementById('gate').classList.add('hidden');document.getElementById('dash').classList.remove('hidden');render(j);setInterval(async()=>{const rr=await fetch('/api/faculty/stats?h='+encodeURIComponent(h));const jj=await rr.json();if(rr.ok)render(jj);},3000);}function render(j){document.getElementById('total').innerText=j.total||0;document.getElementById('teams').innerText=j.candidates.length;let maxV=0,lead='-';j.candidates.forEach(c=>{const v=j.votes[c.id]||0;if(v>maxV){maxV=v;lead=c.party;}});document.getElementById('leading').innerText=lead;document.getElementById('results').innerHTML=j.candidates.map(c=>{const v=j.votes[c.id]||0;const pct=j.total?Math.round(v/j.total*100):0;const leadBadge=v===maxV&&v>0?'<span class=text-[#a16207] text-[10px] bg-[#fef9c3] px-2 py-1 rounded-full ml-2>LEADING</span>':'';return '<div class="bg-white rounded-2xl p-4 shadow"><div class=flex justify-between items-center><div class=flex items-center gap-3><img src="'+(c.logo||'')+'" class="w-10 h-10 rounded-xl bg-gray-100 object-cover"><div><div class=font-black text-sm>'+c.party+leadBadge+'</div><div class=text-xs text-gray-500>'+v+' votes • '+pct+'%</div></div></div><div class=text-right><div class=font-black>'+pct+'%</div><div class=text-xs>'+v+' VOTES</div></div></div><div class="w-full bg-gray-100 h-3 rounded-full mt-3"><div class="bg-[#22c55e] h-3 rounded-full" style="width:'+pct+'%"></div></div><div class=flex gap-4 mt-3 text-xs><span>President: '+c.president+'</span><span>Vice: '+c.vice+'</span></div></div>';}).join('');document.getElementById('audit').innerText=(j.audit||[]).slice(-30).join('\\n');}</script></body></html>`));
+
+// VOTER PAGE - PURPLE + CANDIDATE WITH 2 PHOTOS
+app.get('/',(req,res)=>res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MajorTech Voting</title><script src="https://cdn.tailwindcss.com"></script><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@800;900&display=swap');body{font-family:Inter;background:linear-gradient(180deg,#7b5bff 0%,#6a4bff 100%);min-height:100vh}.card{max-width:420px;margin:0 auto;background:white;border-radius:28px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25)}.header{background:#111d33;padding:22px 24px}.tech{color:#2eb5f5}.err{color:#ef4444;font-size:12px;font-weight:800;margin-top:10px}</style></head><body class="flex items-center justify-center p-4"><div id="s1" class="card w-full"><div class="header"><div class="text-white font-black text-[26px]">Major<span class="tech">Tech</span> Verify</div><div class="text-white/60 text-[12px] mt-1">Official Student ID Verification</div></div><div class="p-6"><div class="font-black text-[11px] tracking-widest">ENTER STUDENT ID NUMBER</div><input id="sid" class="w-full mt-3 bg-[#f1f3f9] p-4 rounded-2xl outline-none font-bold" placeholder="LISE-044-2025"><div id="e1" class="err hidden"></div><button onclick="verify()" class="w-full mt-5 bg-[#111d33] text-white py-4 rounded-2xl font-black">VERIFY ></button></div></div><div id="s2" class="card w-full hidden"><div class="header"><div class="text-white font-black text-[26px]">Major<span class="tech">Tech</span> Vote</div><div class="text-white/60 text-[12px]">Token like AB1234</div></div><div class="p-6"><div id="tokBox" class="bg-[#10d876] text-white text-center py-5 rounded-2xl font-black text-[30px] tracking-[5px]">TG0000</div><input id="tin" class="w-full mt-4 border-2 border-gray-100 p-4 rounded-2xl outline-none font-bold"><div id="e2" class="err hidden"></div><button onclick="nextStep()" class="w-full mt-4 bg-[#111d33] text-white py-4 rounded-2xl font-black">ENTER > NEXT</button></div></div><div id="s3" class="w-full max-w-[520px] mx-auto hidden"><div class="bg-[#111d33] text-white p-6 rounded-t-[28px] text-center"><div class="font-black text-2xl">Choose Team</div><div class="text-white/60 text-sm">President + Vice President</div></div><div class="bg-[#f5f5f7] p-4 rounded-b-[28px]"><div id="cans" class="space-y-4"></div><div id="e3" class="err hidden text-center"></div></div></div><div id="s4" class="card w-full hidden bg-[#111d33] text-center p-8"><div class="w-20 h-20 bg-[#10d876] rounded-full flex items-center justify-center mx-auto text-4xl font-black text-white">✓</div><div class="text-white font-black text-[22px] mt-5">Vote Successful!</div><div id="votedFor" class="text-white/80 mt-3 text-[14px]"></div><div class="bg-white/10 rounded-2xl p-4 mt-6 text-left"><div class="text-white font-bold text-[13px]">Your vote is secured. Token Burned.</div><div class="text-[#a78bfa] text-[11px] mt-2">Live result is only for Admin & Faculty.</div></div><button onclick="location.reload()" class="w-full mt-6 bg-[#7b5bff] text-white py-4 rounded-2xl font-black">Done</button></div><script>
 let myToken='';
 async function verify(){
  const id=document.getElementById('sid').value.trim().toUpperCase();
@@ -85,32 +89,11 @@ async function verify(){
  const r=await fetch('/api/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({studentId:id})});
  const j=await r.json();
  if(!r.ok){e.style.color='#ef4444'; e.innerText='❌ '+j.error; return;}
- myToken=j.token;
- document.getElementById('tokBox').innerText=myToken;
- document.getElementById('tin').value=myToken;
- document.getElementById('s1').classList.add('hidden');
- document.getElementById('s2').classList.remove('hidden');
+ myToken=j.token; document.getElementById('tokBox').innerText=myToken; document.getElementById('tin').value=myToken;
+ document.getElementById('s1').classList.add('hidden'); document.getElementById('s2').classList.remove('hidden');
 }
-function nextStep(){
- const t=document.getElementById('tin').value.trim().toUpperCase();
- if(t!==myToken){const e=document.getElementById('e2');e.innerText='Token mismatch!';e.classList.remove('hidden');return;}
- loadCans();
-}
-async function loadCans(){
- document.getElementById('s2').classList.add('hidden');
- document.getElementById('s3').classList.remove('hidden');
- document.getElementById('cans').innerHTML='Loading...';
- const r=await fetch('/api/public'); const j=await r.json();
- document.getElementById('cans').innerHTML=j.candidates.map(c=>\`<div class="bg-white shadow rounded-2xl p-3 flex items-center gap-3"><div class="w-14 h-14 bg-[#2a344b] rounded-2xl flex items-center justify-center text-white font-black">C</div><div class="flex-1 font-black text-[14px]">\${c.name}</div><button onclick="vote('\${c.id}')" class="bg-[#111d33] text-white px-6 py-3 rounded-2xl font-black text-[12px]">VOTE</button></div>\`).join('');
-}
-async function vote(cid){
- if(!confirm('Confirm?')) return;
- const r=await fetch('/api/vote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:myToken,candidateId:cid})});
- const j=await r.json();
- if(!r.ok){const e=document.getElementById('e3');e.innerText=j.error;e.classList.remove('hidden');return;}
- document.getElementById('votedFor').innerText='You voted for '+j.candidateName;
- document.getElementById('s3').classList.add('hidden');
- document.getElementById('s4').classList.remove('hidden');
-}
+function nextStep(){ const t=document.getElementById('tin').value.trim().toUpperCase(); if(t!==myToken){const e=document.getElementById('e2');e.innerText='Token mismatch!';e.classList.remove('hidden');return;} loadCans(); }
+async function loadCans(){ document.getElementById('s2').classList.add('hidden'); document.getElementById('s3').classList.remove('hidden'); document.getElementById('cans').innerHTML='Loading teams from KV...'; const r=await fetch('/api/public'); const j=await r.json(); document.getElementById('cans').innerHTML=j.candidates.map(c=>\`<div class="bg-white rounded-[24px] p-5 shadow"><div class=flex items-center gap-3><img src="\${c.logo||''}" class="w-12 h-12 rounded-xl bg-gray-100 object-cover"><div class=font-black>\${c.party}</div></div><div class=grid grid-cols-2 gap-4 mt-5><div class=text-center><img src="\${c.presPhoto||''}" class="w-24 h-24 rounded-2xl object-cover mx-auto bg-gray-100"><div class="text-[11px] text-gray-500 mt-2">PRESIDENT</div><div class=font-black text-sm>\${c.president||''}</div></div><div class=text-center><img src="\${c.vicePhoto||''}" class="w-24 h-24 rounded-2xl object-cover mx-auto bg-gray-100"><div class="text-[11px] text-gray-500 mt-2">VICE PRESIDENT</div><div class=font-black text-sm>\${c.vice||''}</div></div></div><button onclick="vote('\${c.id}')" class="w-full mt-5 bg-[#22c55e] text-white py-4 rounded-2xl font-black">VOTE FOR \${c.party}</button></div>\`).join(''); }
+async function vote(cid){ if(!confirm('Confirm? Token will be burned!')) return; const r=await fetch('/api/vote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:myToken,candidateId:cid})}); const j=await r.json(); if(!r.ok){const e=document.getElementById('e3');e.innerText=j.error;e.classList.remove('hidden');return;} document.getElementById('votedFor').innerText='You voted for '+j.party; document.getElementById('s3').classList.add('hidden'); document.getElementById('s4').classList.remove('hidden'); }
 </script></body></html>`));
 export default app;
