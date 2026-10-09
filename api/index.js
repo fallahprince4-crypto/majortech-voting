@@ -7,7 +7,7 @@ const SUPER_HASH = process.env.SUPER_HASH || 'z8x2c4v6b9n1m3q5w7e2r4t6y8u1i3o5p2
 const FACULTY_HASH = process.env.FACULTY_HASH || 'a9f3b7c2d1e8f4a6b9c2d1e8f4a6b9c2d5e8f1a3b7c9d2e5f8a1b2c3';
 const KEY_MAIN = "majortech-v8-final";
 const KEY_AUDIT = "majortech-audit-v8";
-const genIds = () => Array.from({length:60},(_,i)=>`LISE-${String(i+1).padStart(3,'0')}-2025`);
+const genIds = () => Array.from({length:60},(_,i)=>`LISE-${String(i+1).padStart(3,'0')}-2026`);
 const defaultData = () => ({
   validIds: genIds(),
   candidates:[
